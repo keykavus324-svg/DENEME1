@@ -1,10 +1,10 @@
 # clib
 
 [![CI](https://github.com/keykavus324-svg/DENEME1/actions/workflows/ci.yml/badge.svg)](https://github.com/keykavus324-svg/DENEME1/actions/workflows/ci.yml)
-![C](https://img.shields.io/badge/C-C99-blue.svg)
+![C](https://img.shields.io/badge/C-C11-blue.svg)
 ![License](https://img.shields.io/badge/license-MIT-green.svg)
 
-A small, dependency-free **C99 utility library**: generic containers, sorting
+A small, dependency-free **C11 utility library**: generic containers, sorting
 routines, string helpers and graph algorithms — written to be readable first.
 
 Every module is self-contained, has unit tests and is documented in the header.
@@ -72,7 +72,7 @@ int main(void) {
 2. **Return codes, not hidden aborts.** Functions that can fail return a
    `clib_status`.
 3. **No global state.** Two containers never share hidden buffers.
-4. **C99 only.** No compiler extensions, no platform-specific headers.
+4. **C11 only.** No compiler extensions, no platform-specific headers.
 
 ## License
 
