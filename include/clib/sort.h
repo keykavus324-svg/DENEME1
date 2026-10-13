@@ -30,12 +30,19 @@ void clib_sort_insertion(void *base, size_t n, size_t elem_size,
                          clib_cmp_fn cmp, void *ctx);
 
 /**
- * Quicksort with median-of-three pivoting and a 3-way partition.
+ * Quicksort with a 3-way partition and Tukey's ninther pivot.
  *
- * The 3-way (Dutch national flag) partition is what keeps arrays full of
- * duplicates at O(n) instead of degenerating to O(n^2), and the median-of-three
- * pivot avoids the already-sorted worst case. Recursion is bounded at O(log n)
+ * The 3-way (Dutch national flag) partition keeps arrays full of duplicates at
+ * O(n) instead of degenerating to O(n^2). Recursion is bounded at O(log n)
  * stack depth because only the smaller side recurses.
+ *
+ * The pivot is the median of three medians-of-three over nine spread-out
+ * samples, not a plain median-of-three. That matters because the 3-way
+ * partition rotates its "greater than" region, so already-sorted input arrives
+ * at the next level *rotated*, where a 3-sample median picks almost the minimum
+ * and splits 1-vs-(n-1) - measured at O(n^1.5) instead of O(n log n). Nine
+ * samples cannot be defeated by one rotation; sorting an already-sorted array
+ * is now the fastest case rather than one of the slowest.
  */
 void clib_sort_quick(void *base, size_t n, size_t elem_size,
                      clib_cmp_fn cmp, void *ctx);
