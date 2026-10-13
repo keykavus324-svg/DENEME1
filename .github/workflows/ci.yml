@@ -1,0 +1,88 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build-and-test:
+    name: ${{ matrix.cc }} / ${{ matrix.mode }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        cc: [gcc, clang]
+        mode: [debug, release]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build library
+        run: make CC=${{ matrix.cc }}
+        env:
+          CFLAGS: >-
+            -std=c11 -Wall -Wextra -Wpedantic
+            ${{ matrix.mode == 'debug' && '-g -O0' || '-O2' }}
+
+      - name: Run unit tests
+        run: make test CC=${{ matrix.cc }}
+        env:
+          CFLAGS: >-
+            -std=c11 -Wall -Wextra -Wpedantic
+            ${{ matrix.mode == 'debug' && '-g -O0' || '-O2' }}
+
+  sanitizers:
+    name: ASan + UBSan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # LeakSanitizer is on by default with ASan, so this also catches leaks.
+      - name: Build and run under AddressSanitizer
+        run: make test
+        env:
+          CFLAGS: -std=c11 -Wall -Wextra -Wpedantic -g -O1 -fsanitize=address,undefined -fno-omit-frame-pointer
+
+      - name: Build and run under UndefinedBehaviorSanitizer
+        run: make test
+        env:
+          CFLAGS: -std=c11 -Wall -Wextra -Wpedantic -g -O1 -fsanitize=undefined -fno-sanitize-recover=all
+
+  pedantic:
+    name: No warnings allowed
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build with -Werror and extra warnings
+        run: make clean && make test
+        env:
+          CFLAGS: -std=c11 -Wall -Wextra -Wpedantic -Wshadow -Wconversion -Wsign-conversion -Wcast-qual -Werror -O2
+
+  headers-standalone:
+    name: Every header compiles on its own
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # A header that only works when something else is included first is a bug.
+      - name: Compile each header as C
+        run: |
+          set -euo pipefail
+          for h in include/clib/*.h; do
+            echo "--- $h (C)"
+            printf '#include "%s"\nint main(void){return 0;}\n' \
+              "${h#include/}" > /tmp/hdr.c
+            gcc -std=c11 -Wall -Wextra -Wpedantic -Werror -Iinclude /tmp/hdr.c -o /tmp/hdr
+          done
+
+      - name: Compile each header as C++ (extern "C" sanity)
+        run: |
+          set -euo pipefail
+          for h in include/clib/*.h; do
+            echo "--- $h (C++)"
+            printf '#include "%s"\nint main(){return 0;}\n' \
+              "${h#include/}" > /tmp/hdr.cpp
+            g++ -std=c++17 -Wall -Wextra -Werror -Iinclude /tmp/hdr.cpp -o /tmp/hdrpp
+          done
