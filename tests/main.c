@@ -71,6 +71,8 @@ int main(void)
     CLIB_RUN(test_dlist);
     CLIB_RUN(test_stack);
     CLIB_RUN(test_queue);
+    CLIB_RUN(test_hashmap);
+    CLIB_RUN(test_bst);
 
     printf("\n%d checks, %d failures\n", clib_test_checks, clib_test_failures);
     return clib_test_failures ? 1 : 0;
