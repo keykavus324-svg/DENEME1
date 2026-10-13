@@ -30,6 +30,29 @@ static void fill_random(int *a, size_t n)
     for (i = 0; i < n; i++) a[i] = (int)(rng_next() % 1000);
 }
 
+/*
+ * Comparison-counting wrapper around clib_cmp_int.
+ *
+ * Correctness tests cannot see a pivot-quality regression: a broken pivot still
+ * produces a correctly sorted array, just slowly. Counting comparisons is what
+ * turns "already sorted input runs in O(n log n)" into an assertion instead of
+ * a hope.
+ *
+ * Measured with the ninther pivot: ~16 comparisons per element.
+ * Measured with plain median-of-three on the same input: ~210 per element.
+ */
+static long long cmp_calls;
+static int cmp_int_count(const void *lhs, const void *rhs, void *ctx)
+{
+    (void)ctx;
+    cmp_calls++;
+    return clib_cmp_int(lhs, rhs, NULL);
+}
+
+/* Generous headroom over the ~16n we actually use, still far below the
+   ~200n that a degenerate pivot costs. */
+#define CMP_BUDGET_PER_ELEMENT 64
+
 CLIB_TEST(test_sort)
 {
     static int a[N], b[N];
@@ -134,6 +157,64 @@ CLIB_TEST(test_sort)
     CLIB_CHECK_EQ(a[0], 6);
     CLIB_CHECK_EQ(a[6], 0);
     CLIB_CHECK_EQ(a[3], 3);   /* the middle element stays put */
+
+    /* --- adversarial patterns, at a size where a bad pivot actually shows -- */
+    {
+        enum { BIG = 100000 };
+        static int big[BIG];
+        size_t k;
+
+        /* Ascending: the input that used to hit the rotation + median-of-three
+           trap and cost O(n^1.5). */
+        for (k = 0; k < BIG; k++) big[k] = (int)k;
+        cmp_calls = 0;
+        clib_sort_quick(big, BIG, sizeof big[0], cmp_int_count, NULL);
+        CLIB_CHECK(clib_is_sorted(big, BIG, sizeof big[0], clib_cmp_int, NULL));
+        CLIB_CHECK(cmp_calls < CMP_BUDGET_PER_ELEMENT * (long long)BIG);
+
+        /* Descending. */
+        for (k = 0; k < BIG; k++) big[k] = (int)(BIG - k);
+        cmp_calls = 0;
+        clib_sort_quick(big, BIG, sizeof big[0], cmp_int_count, NULL);
+        CLIB_CHECK(clib_is_sorted(big, BIG, sizeof big[0], clib_cmp_int, NULL));
+        CLIB_CHECK(cmp_calls < CMP_BUDGET_PER_ELEMENT * (long long)BIG);
+
+        /* Organ pipe: increasing to the middle, then decreasing. */
+        for (k = 0; k < BIG; k++)
+            big[k] = (k < BIG / 2) ? (int)k : (int)(BIG - k);
+        cmp_calls = 0;
+        clib_sort_quick(big, BIG, sizeof big[0], cmp_int_count, NULL);
+        CLIB_CHECK(clib_is_sorted(big, BIG, sizeof big[0], clib_cmp_int, NULL));
+        CLIB_CHECK(cmp_calls < CMP_BUDGET_PER_ELEMENT * (long long)BIG);
+
+        /* All equal at scale - the O(n^2) trap for a 2-way partition. */
+        for (k = 0; k < BIG; k++) big[k] = 99;
+        cmp_calls = 0;
+        clib_sort_quick(big, BIG, sizeof big[0], cmp_int_count, NULL);
+        CLIB_CHECK(clib_is_sorted(big, BIG, sizeof big[0], clib_cmp_int, NULL));
+        CLIB_CHECK(cmp_calls < CMP_BUDGET_PER_ELEMENT * (long long)BIG);
+
+        /* Only three distinct values across the whole array. */
+        for (k = 0; k < BIG; k++) big[k] = (int)(k % 3);
+        cmp_calls = 0;
+        clib_sort_quick(big, BIG, sizeof big[0], cmp_int_count, NULL);
+        CLIB_CHECK(clib_is_sorted(big, BIG, sizeof big[0], clib_cmp_int, NULL));
+        CLIB_CHECK(cmp_calls < CMP_BUDGET_PER_ELEMENT * (long long)BIG);
+
+        /* Sorted with a single out-of-place element at each end. */
+        for (k = 0; k < BIG; k++) big[k] = (int)k;
+        big[0] = (int)BIG;
+        big[BIG - 1] = -1;
+        cmp_calls = 0;
+        clib_sort_quick(big, BIG, sizeof big[0], cmp_int_count, NULL);
+        CLIB_CHECK(clib_is_sorted(big, BIG, sizeof big[0], clib_cmp_int, NULL));
+        CLIB_CHECK(cmp_calls < CMP_BUDGET_PER_ELEMENT * (long long)BIG);
+
+        /* merge sort must handle the same shapes. */
+        for (k = 0; k < BIG; k++) big[k] = (int)(BIG - k);
+        CLIB_CHECK(clib_sort_merge(big, BIG, sizeof big[0], clib_cmp_int, NULL) == CLIB_OK);
+        CLIB_CHECK(clib_is_sorted(big, BIG, sizeof big[0], clib_cmp_int, NULL));
+    }
 
     /* --- is_sorted edge cases --------------------------------------------- */
 
