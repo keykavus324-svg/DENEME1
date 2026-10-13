@@ -143,7 +143,7 @@ clib_status clib_sort_merge(void *base, size_t n, size_t es,
     return CLIB_OK;
 }
 
-void *clib_binary_search(const void *key, const void *base, size_t n,
+void *clib_binary_search(const void *key, void *base, size_t n,
                          size_t es, clib_cmp_fn cmp, void *ctx)
 {
     size_t lo = 0, hi = n;
@@ -152,9 +152,9 @@ void *clib_binary_search(const void *key, const void *base, size_t n,
 
     while (lo < hi) {
         size_t mid = lo + (hi - lo) / 2;
-        const char *p = (const char *)base + mid * es;
+        char *p = (char *)base + mid * es;
         int c = cmp(key, p, ctx);
-        if (c == 0) return (void *)p;
+        if (c == 0) return p;
         if (c < 0) hi = mid;
         else       lo = mid + 1;
     }

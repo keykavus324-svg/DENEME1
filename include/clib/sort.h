@@ -49,9 +49,14 @@ clib_status clib_sort_merge(void *base, size_t n, size_t elem_size,
 
 /**
  * Binary search over a sorted array. Returns a pointer to a matching element,
- * or NULL when @p key is absent (then which element matches is unspecified).
+ * or NULL when @p key is absent.
+ *
+ * @p base is deliberately **not** const: the returned pointer is mutable, so
+ * taking a const array here would hand the caller a writable view of read-only
+ * memory. (The C standard's own `bsearch` takes a const base and returns a
+ * non-const pointer, which is exactly the hole this avoids.)
  */
-void *clib_binary_search(const void *key, const void *base, size_t n,
+void *clib_binary_search(const void *key, void *base, size_t n,
                          size_t elem_size, clib_cmp_fn cmp, void *ctx);
 
 /** True when the array is already sorted in ascending order. */
