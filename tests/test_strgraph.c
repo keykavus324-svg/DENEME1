@@ -235,3 +235,157 @@ CLIB_TEST(test_graph)
         clib_graph_free(&f);
     }
 }
+
+/* ------------------------------------------------- graph algorithms */
+
+CLIB_TEST(test_graph_algs)
+{
+    clib_graph g;
+    size_t order[8];
+    size_t n_out;
+    long long bf[8];
+    size_t bfp[8];
+
+    /* --- topological sort on a DAG ------------------------------------- */
+    /*
+     *   0 -> 1 -> 3 -> 4 -> 5
+     *    \-> 2 ->/
+     */
+    CLIB_CHECK(clib_graph_init(&g, 6, NULL) == CLIB_OK);
+    CLIB_CHECK(clib_graph_add_edge(&g, 0, 1, 1) == CLIB_OK);
+    CLIB_CHECK(clib_graph_add_edge(&g, 0, 2, 1) == CLIB_OK);
+    CLIB_CHECK(clib_graph_add_edge(&g, 1, 3, 1) == CLIB_OK);
+    CLIB_CHECK(clib_graph_add_edge(&g, 2, 3, 1) == CLIB_OK);
+    CLIB_CHECK(clib_graph_add_edge(&g, 3, 4, 1) == CLIB_OK);
+    CLIB_CHECK(clib_graph_add_edge(&g, 4, 5, 1) == CLIB_OK);
+
+    CLIB_CHECK(clib_graph_topo_sort(&g, order, &n_out) == CLIB_OK);
+    CLIB_CHECK_EQ(n_out, 6);
+
+    /* A valid order is one where every arc points forward. */
+    {
+        int pos[6], i, ok = 1;
+        for (i = 0; i < 6; i++) pos[(int)order[i]] = i;
+        for (i = 0; i < 6; i++) {
+            clib_graph_edge *e;
+            for (e = g.adj[i]; e; e = e->next)
+                if (!(pos[i] < pos[(int)e->to])) ok = 0;
+        }
+        CLIB_CHECK(ok);
+        CLIB_CHECK_EQ(order[0], 0);
+        CLIB_CHECK_EQ(order[5], 5);
+    }
+    clib_graph_free(&g);
+
+    /* --- a cycle must be reported, not silently truncated -------------- */
+    {
+        clib_graph c;
+        CLIB_CHECK(clib_graph_init(&c, 3, NULL) == CLIB_OK);
+        CLIB_CHECK(clib_graph_add_edge(&c, 0, 1, 1) == CLIB_OK);
+        CLIB_CHECK(clib_graph_add_edge(&c, 1, 2, 1) == CLIB_OK);
+        CLIB_CHECK(clib_graph_add_edge(&c, 2, 0, 1) == CLIB_OK);
+        CLIB_CHECK(clib_graph_topo_sort(&c, order, &n_out) == CLIB_ERR_INVAL);
+        CLIB_CHECK_EQ(n_out, 0);        /* nothing can start a cycle */
+        clib_graph_free(&c);
+    }
+
+    /* --- MST by Kruskal -------------------------------------------------- */
+    /*
+     *   0 -1- 1          edges sorted: (0,1)=1 (2,3)=1 (1,2)=2
+     *   |      |                       (3,4)=3 (1,3)=4 (0,2)=5
+     *   5      2   4
+     *   |      |  /
+     *   2 -1- 3 -3- 4
+     *
+     * Kruskal takes (0,1), (2,3), (1,2), (3,4) = total 7, and stops at n-1.
+     */
+    {
+        clib_graph_mst_edge mst[8];
+        size_t mst_n = 0;
+        long long total = 0;
+        size_t i;
+
+        CLIB_CHECK(clib_graph_init(&g, 5, NULL) == CLIB_OK);
+        CLIB_CHECK(clib_graph_add_edge_undirected(&g, 0, 1, 1) == CLIB_OK);
+        CLIB_CHECK(clib_graph_add_edge_undirected(&g, 0, 2, 5) == CLIB_OK);
+        CLIB_CHECK(clib_graph_add_edge_undirected(&g, 1, 2, 2) == CLIB_OK);
+        CLIB_CHECK(clib_graph_add_edge_undirected(&g, 1, 3, 4) == CLIB_OK);
+        CLIB_CHECK(clib_graph_add_edge_undirected(&g, 2, 3, 1) == CLIB_OK);
+        CLIB_CHECK(clib_graph_add_edge_undirected(&g, 3, 4, 3) == CLIB_OK);
+
+        CLIB_CHECK(clib_graph_mst(&g, mst, &mst_n) == CLIB_OK);
+        CLIB_CHECK_EQ(mst_n, 4);                    /* n - 1 for a connected graph */
+
+        for (i = 0; i < mst_n; i++) {
+            total += mst[i].weight;
+            CLIB_CHECK(mst[i].u < mst[i].v);        /* normalised endpoints */
+        }
+        CLIB_CHECK_EQ(total, 7);
+
+        /* Weights must be non-decreasing: that is what "Kruskal" means. */
+        for (i = 1; i < mst_n; i++)
+            CLIB_CHECK(mst[i - 1].weight <= mst[i].weight);
+
+        clib_graph_free(&g);
+    }
+
+    /* A disconnected graph yields a forest, not an error. */
+    {
+        clib_graph_mst_edge mst[8];
+        size_t mst_n = 0;
+        CLIB_CHECK(clib_graph_init(&g, 4, NULL) == CLIB_OK);
+        CLIB_CHECK(clib_graph_add_edge_undirected(&g, 0, 1, 1) == CLIB_OK);
+        CLIB_CHECK(clib_graph_add_edge_undirected(&g, 2, 3, 2) == CLIB_OK);
+        CLIB_CHECK(clib_graph_mst(&g, mst, &mst_n) == CLIB_OK);
+        CLIB_CHECK_EQ(mst_n, 2);                    /* n - components = 4 - 2 */
+        clib_graph_free(&g);
+    }
+
+    /* --- Bellman-Ford, including negative arcs --------------------------- */
+    /*
+     *   0 -4-> 1 -(-3)-> 2 -2-> 3
+     *    \--5------------>^     ^
+     *                     6-----/
+     * d[1]=4, d[2]=1 (via 0->1->2), d[3]=3 (via 2)
+     */
+    CLIB_CHECK(clib_graph_init(&g, 4, NULL) == CLIB_OK);
+    CLIB_CHECK(clib_graph_add_edge(&g, 0, 1, 4) == CLIB_OK);
+    CLIB_CHECK(clib_graph_add_edge(&g, 0, 2, 5) == CLIB_OK);
+    CLIB_CHECK(clib_graph_add_edge(&g, 1, 2, -3) == CLIB_OK);
+    CLIB_CHECK(clib_graph_add_edge(&g, 2, 3, 2) == CLIB_OK);
+    CLIB_CHECK(clib_graph_add_edge(&g, 1, 3, 6) == CLIB_OK);
+
+    CLIB_CHECK(clib_graph_bellman_ford(&g, 0, bf, bfp) == CLIB_OK);
+    CLIB_CHECK_EQ(bf[0], 0);
+    CLIB_CHECK_EQ(bf[1], 4);
+    CLIB_CHECK_EQ(bf[2], 1);        /* negative arc beats the direct 0->2 of 5 */
+    CLIB_CHECK_EQ(bf[3], 3);
+    clib_graph_free(&g);
+
+    /* A negative cycle must be detected, not looped over forever. */
+    {
+        clib_graph nc;
+        CLIB_CHECK(clib_graph_init(&nc, 3, NULL) == CLIB_OK);
+        CLIB_CHECK(clib_graph_add_edge(&nc, 0, 1, 1) == CLIB_OK);
+        CLIB_CHECK(clib_graph_add_edge(&nc, 1, 2, -2) == CLIB_OK);
+        CLIB_CHECK(clib_graph_add_edge(&nc, 2, 1, -2) == CLIB_OK);
+        CLIB_CHECK(clib_graph_bellman_ford(&nc, 0, bf, bfp) == CLIB_ERR_INVAL);
+        clib_graph_free(&nc);
+    }
+
+    /* Unreachable vertices must stay marked, not wrapped around. */
+    {
+        clib_graph u;
+        CLIB_CHECK(clib_graph_init(&u, 3, NULL) == CLIB_OK);
+        CLIB_CHECK(clib_graph_add_edge(&u, 0, 1, 2) == CLIB_OK);
+        CLIB_CHECK(clib_graph_bellman_ford(&u, 0, bf, bfp) == CLIB_OK);
+        CLIB_CHECK_EQ(bf[0], 0);
+        CLIB_CHECK_EQ(bf[1], 2);
+        CLIB_CHECK_EQ(bf[2], CLIB_GRAPH_UNREACHABLE);
+        clib_graph_free(&u);
+    }
+
+    /* Bad arguments must be rejected outright. */
+    CLIB_CHECK(clib_graph_topo_sort(NULL, order, &n_out) == CLIB_ERR_INVAL);
+    CLIB_CHECK(clib_graph_bellman_ford(&g, 0, bf, bfp) == CLIB_ERR_INVAL);  /* freed */
+}
