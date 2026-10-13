@@ -117,5 +117,7 @@ void test_slist(void);
 void test_dlist(void);
 void test_stack(void);
 void test_queue(void);
+void test_hashmap(void);
+void test_bst(void);
 
 #endif /* CLIB_TEST_H */
