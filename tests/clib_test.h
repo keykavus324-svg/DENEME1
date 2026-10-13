@@ -121,5 +121,7 @@ void test_hashmap(void);
 void test_bst(void);
 void test_sort(void);
 void test_heap(void);
+void test_strutil(void);
+void test_graph(void);
 
 #endif /* CLIB_TEST_H */
