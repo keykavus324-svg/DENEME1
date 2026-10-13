@@ -60,6 +60,24 @@ jobs:
         env:
           CFLAGS: -std=c11 -Wall -Wextra -Wpedantic -Wshadow -Wconversion -Wsign-conversion -Wcast-qual -Werror -O2
 
+  examples:
+    name: Examples run leak-free
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Runs under ASan, so LeakSanitizer checks the examples as well as the
+      # library. This caught a real leak in examples/wordcount.c.
+      - name: Build and run the examples
+        run: |
+          set -euo pipefail
+          make examples
+          printf "the cat the hat sat on the mat and the cat sat on the hat" | ./build/wordcount 5
+          ./build/shortest_path 12 16 7
+        env:
+          CFLAGS: -std=c11 -Wall -Wextra -Wpedantic -Werror -Wshadow -Wconversion -Wsign-conversion -Wcast-qual -g -O1 -fsanitize=address,undefined -fno-omit-frame-pointer
+          ASAN_OPTIONS: detect_leaks=1
+
   benchmarks:
     name: Benchmarks compile and run
     runs-on: ubuntu-latest
