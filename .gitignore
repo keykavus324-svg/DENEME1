@@ -1,0 +1,14 @@
+# Build artifacts
+build/
+*.o
+*.a
+*.so
+*.d
+*.out
+*.exe
+
+# Local tooling
+compile_flags.txt
+.cache/
+.DS_Store
+*.swp
