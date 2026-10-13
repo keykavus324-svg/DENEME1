@@ -79,6 +79,7 @@ int main(void)
     CLIB_RUN(test_graph);
     CLIB_RUN(test_lru);
     CLIB_RUN(test_uf);
+    CLIB_RUN(test_trie);
 
     printf("\n%d checks, %d failures\n", clib_test_checks, clib_test_failures);
     return clib_test_failures ? 1 : 0;
