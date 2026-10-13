@@ -125,5 +125,6 @@ void test_strutil(void);
 void test_graph(void);
 void test_lru(void);
 void test_uf(void);
+void test_trie(void);
 
 #endif /* CLIB_TEST_H */

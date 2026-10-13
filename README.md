@@ -73,6 +73,7 @@ int main(void) {
 | Graph | `clib/graph.h` | BFS, DFS, Dijkstra |
 | LRU cache | `clib/lru.h` | hash map + list, O(1) get/put/evict |
 | Disjoint set | `clib/uf.h` | union by rank + path compression |
+| Prefix tree | `clib/trie.h` | O(len) lookup, prefix enumeration |
 
 ---
 
