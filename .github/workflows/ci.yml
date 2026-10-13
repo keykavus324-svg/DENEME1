@@ -60,6 +60,19 @@ jobs:
         env:
           CFLAGS: -std=c11 -Wall -Wextra -Wpedantic -Wshadow -Wconversion -Wsign-conversion -Wcast-qual -Werror -O2
 
+  benchmarks:
+    name: Benchmarks compile and run
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Runs as well as builds: the point is that a change which makes a
+      # container accidentally quadratic shows up here, not in production.
+      - name: Run benchmarks
+        run: make bench
+        env:
+          CFLAGS: -std=c11 -Wall -Wextra -Wpedantic -O2
+
   headers-standalone:
     name: Every header compiles on its own
     runs-on: ubuntu-latest
