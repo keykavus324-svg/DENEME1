@@ -57,6 +57,15 @@ void *clib_hashmap_get(const clib_hashmap *m, const char *key);
 /** True when @p key is present. */
 int clib_hashmap_has(const clib_hashmap *m, const char *key);
 
+/**
+ * Pointer to the map's own copy of @p key, or NULL when absent.
+ *
+ * The returned pointer stays valid until that key is removed or the map is
+ * freed. Useful when a second structure wants to reference the key without
+ * allocating a duplicate of it (see ::clib_lru).
+ */
+const char *clib_hashmap_key(const clib_hashmap *m, const char *key);
+
 /** Remove @p key. Returns CLIB_ERR_NOTFOUND when absent. */
 clib_status clib_hashmap_remove(clib_hashmap *m, const char *key);
 
