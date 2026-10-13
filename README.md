@@ -74,6 +74,7 @@ int main(void) {
 | LRU cache | `clib/lru.h` | hash map + list, O(1) get/put/evict |
 | Disjoint set | `clib/uf.h` | union by rank + path compression |
 | Prefix tree | `clib/trie.h` | O(len) lookup, prefix enumeration |
+| Arena allocator | `clib/arena.h` | bump allocation, plugs into containers |
 
 ---
 

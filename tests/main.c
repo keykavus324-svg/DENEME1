@@ -81,6 +81,7 @@ int main(void)
     CLIB_RUN(test_uf);
     CLIB_RUN(test_trie);
     CLIB_RUN(test_graph_algs);
+    CLIB_RUN(test_arena);
 
     printf("\n%d checks, %d failures\n", clib_test_checks, clib_test_failures);
     return clib_test_failures ? 1 : 0;
