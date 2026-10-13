@@ -14,6 +14,7 @@
 #define CLIB_GRAPH_H
 
 #include <clib/common.h>
+#include <clib/uf.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -80,6 +81,48 @@ clib_status clib_graph_dfs(const clib_graph *g, size_t src,
  */
 clib_status clib_graph_dijkstra(const clib_graph *g, size_t src,
                                 long long *dist, size_t *prev);
+
+/**
+ * Topological order of a directed acyclic graph (Kahn's algorithm).
+ *
+ * @p out receives the vertices in dependency order and must hold @p n entries.
+ * @p out_n receives how many were written.
+ *
+ * Returns CLIB_OK when every vertex was emitted, or CLIB_ERR_INVAL when the
+ * graph has a cycle - in which case @p out is partial and @p out_n is short.
+ * O(n + m).
+ */
+clib_status clib_graph_topo_sort(const clib_graph *g, size_t *out, size_t *out_n);
+
+/** One edge of a minimum spanning tree. */
+typedef struct clib_graph_mst_edge {
+    size_t u;             /**< Lower-numbered endpoint. */
+    size_t v;             /**< Higher-numbered endpoint. */
+    long long weight;     /**< Arc weight. */
+} clib_graph_mst_edge;
+
+/**
+ * Minimum spanning forest by Kruskal's algorithm.
+ *
+ * @p out must hold at least `n - 1` entries; @p out_n receives how many were
+ * written. A connected graph yields exactly `n - 1` edges; a disconnected one
+ * yields `n - components` and this is still the correct answer (a forest).
+ *
+ * Built on ::clib_uf for the cycle test and clib_sort_quick for the edge order.
+ * O(m log m).
+ */
+clib_status clib_graph_mst(const clib_graph *g, clib_graph_mst_edge *out, size_t *out_n);
+
+/**
+ * Single-source shortest paths allowing **negative** arc weights.
+ *
+ * Slower than clib_graph_dijkstra() but it is defined on graphs that Dijkstra
+ * is not. Returns CLIB_ERR_INVAL when a negative cycle is reachable from
+ * @p src, because then no shortest path exists and the answer would be
+ * meaningless. Unreachable vertices get CLIB_GRAPH_UNREACHABLE. O(n*m).
+ */
+clib_status clib_graph_bellman_ford(const clib_graph *g, size_t src,
+                                    long long *dist, size_t *prev);
 
 /** Free every arc and the adjacency array. */
 void clib_graph_free(clib_graph *g);

@@ -1,6 +1,7 @@
 #include <clib/graph.h>
 #include <clib/heap.h>
 #include <clib/queue.h>
+#include <clib/sort.h>
 #include <clib/stack.h>
 
 clib_status clib_graph_init(clib_graph *g, size_t n, const clib_allocator *a)
@@ -213,6 +214,152 @@ clib_status clib_graph_dijkstra(const clib_graph *g, size_t src,
     clib_heap_free(&h);
     clib_free(g->alloc, done);
     clib_free(g->alloc, ids);
+    return CLIB_OK;
+}
+
+clib_status clib_graph_topo_sort(const clib_graph *g, size_t *out, size_t *out_n)
+{
+    size_t *indeg;
+    clib_queue q;
+    clib_status s = CLIB_OK;
+    size_t i, emitted = 0;
+
+    if (!g || !out || !out_n) return CLIB_ERR_INVAL;
+    *out_n = 0;
+    if (g->n == 0) return CLIB_OK;
+
+    indeg = clib_alloc(g->alloc, g->n * sizeof *indeg);
+    if (!indeg) return CLIB_ERR_NOMEM;
+    for (i = 0; i < g->n; i++) indeg[i] = 0;
+
+    for (i = 0; i < g->n; i++) {
+        clib_graph_edge *e;
+        for (e = g->adj[i]; e; e = e->next) indeg[e->to]++;
+    }
+
+    clib_queue_init(&q, g->alloc);
+    for (i = 0; i < g->n; i++) {
+        if (indeg[i]) continue;
+        /* Enqueue the slot: the index is recovered by pointer subtraction. */
+        s = clib_queue_enqueue(&q, &indeg[i]);
+        if (s != CLIB_OK) goto done;
+    }
+
+    while (clib_queue_size(&q)) {
+        size_t u = (size_t)((size_t *)clib_queue_dequeue(&q) - indeg);
+        clib_graph_edge *e;
+
+        out[emitted++] = u;
+
+        for (e = g->adj[u]; e; e = e->next) {
+            if (--indeg[e->to] == 0) {
+                s = clib_queue_enqueue(&q, &indeg[e->to]);
+                if (s != CLIB_OK) goto done;
+            }
+        }
+    }
+
+    /* Short output means something still has an unmet dependency: a cycle. */
+    if (emitted != g->n) s = CLIB_ERR_INVAL;
+
+done:
+    *out_n = emitted;
+    clib_queue_free(&q);
+    clib_free(g->alloc, indeg);
+    return s;
+}
+
+static int cmp_arc(const void *lhs, const void *rhs, void *ctx)
+{
+    const clib_graph_mst_edge *a = lhs, *b = rhs;
+    (void)ctx;
+    return (a->weight > b->weight) - (a->weight < b->weight);
+}
+
+clib_status clib_graph_mst(const clib_graph *g, clib_graph_mst_edge *out, size_t *out_n)
+{
+    clib_graph_mst_edge *arcs = NULL;
+    clib_uf sets;
+    clib_status s;
+    size_t i, count = 0, taken = 0;
+
+    if (!g || !out || !out_n) return CLIB_ERR_INVAL;
+    *out_n = 0;
+    if (g->n < 2) return CLIB_OK;
+
+    if (g->m) {
+        arcs = clib_alloc(g->alloc, g->m * sizeof *arcs);
+        if (!arcs) return CLIB_ERR_NOMEM;
+    }
+
+    for (i = 0; i < g->n && count < g->m; i++) {
+        clib_graph_edge *e;
+        for (e = g->adj[i]; e && count < g->m; e = e->next) {
+            arcs[count].u = i < e->to ? i : e->to;
+            arcs[count].v = i < e->to ? e->to : i;
+            arcs[count].weight = e->weight;
+            count++;
+        }
+    }
+
+    clib_sort_quick(arcs, count, sizeof arcs[0], cmp_arc, NULL);
+
+    s = clib_uf_init(&sets, g->n, g->alloc);
+    if (s != CLIB_OK) { clib_free(g->alloc, arcs); return s; }
+
+    for (i = 0; i < count; i++) {
+        if (clib_uf_connected(&sets, arcs[i].u, arcs[i].v)) continue;  /* cycle */
+        if (clib_uf_union(&sets, arcs[i].u, arcs[i].v) != CLIB_OK) continue;
+        out[taken++] = arcs[i];
+        if (taken == g->n - 1) break;         /* spanning tree complete */
+    }
+
+    *out_n = taken;
+    clib_uf_free(&sets);
+    clib_free(g->alloc, arcs);
+    return CLIB_OK;
+}
+
+clib_status clib_graph_bellman_ford(const clib_graph *g, size_t src,
+                                    long long *dist, size_t *prev)
+{
+    size_t i, iter;
+
+    if (!g || !dist || !prev || src >= g->n) return CLIB_ERR_INVAL;
+
+    for (i = 0; i < g->n; i++) {
+        dist[i] = CLIB_GRAPH_UNREACHABLE;
+        prev[i] = src;
+    }
+    dist[src] = 0;
+
+    /* n-1 passes are enough for any graph without a negative cycle. */
+    for (iter = 1; iter < g->n; iter++) {
+        int changed = 0;
+        for (i = 0; i < g->n; i++) {
+            clib_graph_edge *e;
+            if (dist[i] == CLIB_GRAPH_UNREACHABLE) continue;
+            for (e = g->adj[i]; e; e = e->next) {
+                long long nd = dist[i] + e->weight;
+                if (dist[e->to] == CLIB_GRAPH_UNREACHABLE || nd < dist[e->to]) {
+                    dist[e->to] = nd;
+                    prev[e->to] = i;
+                    changed = 1;
+                }
+            }
+        }
+        if (!changed) break;                  /* settled early */
+    }
+
+    /* One more pass still relaxing means a negative cycle is reachable. */
+    for (i = 0; i < g->n; i++) {
+        clib_graph_edge *e;
+        if (dist[i] == CLIB_GRAPH_UNREACHABLE) continue;
+        for (e = g->adj[i]; e; e = e->next)
+            if (dist[e->to] == CLIB_GRAPH_UNREACHABLE ||
+                dist[i] + e->weight < dist[e->to])
+                return CLIB_ERR_INVAL;
+    }
     return CLIB_OK;
 }
 
