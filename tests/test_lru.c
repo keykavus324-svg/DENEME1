@@ -18,7 +18,13 @@ static void record_evict(const char *key, void *value, void *ctx)
 CLIB_TEST(test_lru)
 {
     clib_lru c;
-    int a = 1, b = 2, d = 3, e = 4, f = 5;
+    /*
+     * All values live for the whole function on purpose: the cache only
+     * BORROWS them, and the eviction callback dereferences them. Storing a
+     * pointer to a block-scoped local here is a use-after-scope the moment the
+     * block exits - which is exactly what ASan caught.
+     */
+    int a = 1, b = 2, d = 3, e = 4, f = 5, newer = 99;
 
     evicted_count = 0;
     evicted_sum = 0;
@@ -52,7 +58,6 @@ CLIB_TEST(test_lru)
 
     /* Re-putting an existing key replaces the value without growing the cache. */
     {
-        int newer = 99;
         CLIB_CHECK(clib_lru_put(&c, "b", &newer) == CLIB_OK);
         CLIB_CHECK_EQ(clib_lru_size(&c), 3);
         CLIB_CHECK(clib_lru_get(&c, "b") == &newer);
@@ -131,10 +136,30 @@ CLIB_TEST(test_lru)
         CLIB_CHECK_EQ(evicted_count, before + 2);
         CLIB_CHECK_EQ(clib_lru_size(&w), 0);
         CLIB_CHECK(w.order.head == NULL && w.order.tail == NULL);
+        clib_lru_free(&w);
     }
 
     clib_lru_free(&c);
     CLIB_CHECK_EQ(clib_lru_size(&c), 0);
+
+    /*
+     * Leak guard: build and destroy a cache through the counting allocator and
+     * require that nothing is left alive. This is what catches a container that
+     * frees its entries but not its index - a bug ordinary assertions miss.
+     */
+    {
+        clib_lru m;
+        int v1 = 1, v2 = 2;
+        clib_test_counter_reset();
+        clib_lru_init(&m, 2, NULL, NULL, &clib_test_counting_allocator);
+        CLIB_CHECK(clib_lru_put(&m, "p", &v1) == CLIB_OK);
+        CLIB_CHECK(clib_lru_put(&m, "q", &v2) == CLIB_OK);
+        CLIB_CHECK(clib_lru_get(&m, "p") == &v1);
+        CLIB_CHECK(clib_lru_put(&m, "r", &v2) == CLIB_OK);   /* forces an evict */
+        CLIB_CHECK_EQ(clib_lru_size(&m), 2);
+        clib_lru_free(&m);
+        CLIB_CHECK_EQ(clib_test_counter_state.live, 0);
+    }
 
     /* OOM path: the cache must stay usable after a failed insertion. */
     {

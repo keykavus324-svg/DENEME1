@@ -126,10 +126,21 @@ size_t clib_lru_capacity(const clib_lru *c)
 void clib_lru_clear(clib_lru *c)
 {
     if (!c) return;
+
+    /* Evict every entry, running the callback for each value. */
     while (c->order.head) drop_node(c, c->order.head);
+
+    /*
+     * drop_node() removes entries from the hash map but leaves its slot array
+     * allocated - clib_hashmap_remove() only unlinks, it does not release the
+     * table. Without this line every cache would leak one table on free.
+     * (Found by LeakSanitizer.)
+     */
+    clib_hashmap_clear(&c->map);
 }
 
 void clib_lru_free(clib_lru *c)
 {
+    if (!c) return;
     clib_lru_clear(c);
 }
