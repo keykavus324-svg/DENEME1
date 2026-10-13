@@ -77,6 +77,7 @@ int main(void)
     CLIB_RUN(test_heap);
     CLIB_RUN(test_strutil);
     CLIB_RUN(test_graph);
+    CLIB_RUN(test_lru);
 
     printf("\n%d checks, %d failures\n", clib_test_checks, clib_test_failures);
     return clib_test_failures ? 1 : 0;

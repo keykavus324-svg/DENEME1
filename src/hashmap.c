@@ -143,6 +143,16 @@ int clib_hashmap_has(const clib_hashmap *m, const char *key)
     return found;
 }
 
+const char *clib_hashmap_key(const clib_hashmap *m, const char *key)
+{
+    int found;
+    size_t i;
+
+    if (!m || !key || m->capacity == 0) return NULL;
+    i = probe(m, key, &found);
+    return found ? m->slots[i].key : NULL;
+}
+
 clib_status clib_hashmap_remove(clib_hashmap *m, const char *key)
 {
     int found;

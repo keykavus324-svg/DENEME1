@@ -123,5 +123,6 @@ void test_sort(void);
 void test_heap(void);
 void test_strutil(void);
 void test_graph(void);
+void test_lru(void);
 
 #endif /* CLIB_TEST_H */

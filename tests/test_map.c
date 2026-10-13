@@ -89,6 +89,25 @@ CLIB_TEST(test_hashmap)
     clib_hashmap_free(&m);
     CLIB_CHECK_EQ(clib_hashmap_size(&m), 0);
 
+    /* clib_hashmap_key() must hand back the map's own, durable copy. */
+    {
+        clib_hashmap k;
+        char tmp[8];
+        int x = 1;
+        const char *stored;
+        clib_hashmap_init(&k, NULL);
+        memcpy(tmp, "abc", 4);
+        CLIB_CHECK(clib_hashmap_put(&k, tmp, &x) == CLIB_OK);
+        memset(tmp, 'X', sizeof tmp);
+
+        stored = clib_hashmap_key(&k, "abc");
+        CLIB_CHECK(stored != NULL);
+        CLIB_CHECK_STR(stored, "abc");           /* not the scribbled buffer */
+        CLIB_CHECK(stored != (const char *)tmp); /* it is the map's copy */
+        CLIB_CHECK(clib_hashmap_key(&k, "nope") == NULL);
+        clib_hashmap_free(&k);
+    }
+
     /* Hash sanity: stable, order-sensitive, empty string == FNV offset basis. */
     CLIB_CHECK_EQ(clib_hash_str("abc"), clib_hash_str("abc"));
     CLIB_CHECK(clib_hash_str("abc") != clib_hash_str("bac"));
